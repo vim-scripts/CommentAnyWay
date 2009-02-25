@@ -1,0 +1,147 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=2554
+
+this explanation is only about mappings and its action.
+if you get interested in this script and you want to know more,
+detailed explanation is written in its script.
+
+
+
+MAPPING:
+
+  In normal mode:
+    If you typed digits string([1-9]) before typing these mappings,
+    behave like in visual mode.
+    so you want to see when you gave digits string, see "In visual mode".
+
+    gcc
+        if default. this is the same as |gct|.
+    gcI
+        add one-line comment to the beginning of line.
+    gci
+        add one-line comment to the beginning of non-space string(\S).
+    gca
+        add one-line comment to the end of line.
+    gcu{type}
+        type is one of 'c I i a'.
+        remove one-line comment.
+    gcw
+        add one-line comment to wrap the line.
+    gct
+        toggle comment/uncomment.
+    gcv{wrap}{action}
+        add various comment.
+    gco
+        jump(o) before add comment.
+    gcO
+        jump(O) before add comment.
+    gcmm
+        add multi-comment.
+    gcmi
+        add if statement.
+    gcmw
+        add while statement.
+    gcmf
+        add for statement.
+    gcms
+        add switch statement.
+    gcmd
+        add do ~ while statement.
+    gcmt
+        add try ~ catch statement.
+
+
+  In visual mode:
+
+    gcc
+        if default. this is the same as |gct|.
+    gcI
+        add one-line comment to the beginning of line.
+    gci
+        add one-line comment to the beginning of non-space string(\S).
+    gca
+        add one-line comment to the end of line.
+    gcu{type}
+        type is one of 'I i a w'.
+        remove one-line comment.
+    gcw
+        add one-line comment to wrap the line.
+    gct
+        toggle comment/uncomment.
+    gcv{string}
+        add various comments.
+    gcmm
+        add multi-comment.
+    gcmi
+        add if statement.
+    gcmw
+        add while statement.
+    gcmf
+        add for statement.
+    gcms
+        add switch statement.
+    gcmd
+        add do ~ while statement.
+    gcmt
+        add try ~ catch statement.
+
+    And these are default mappings.
+    you can define all mappings what you want.
+
+
+
+EXAMPLES:
+
+    If global variables are all default value...
+    
+    |gcI|
+      before:
+          '   testtesttest'
+      after:
+          '#    testtesttest'
+    
+    |gci|
+      before:
+          '   <- inserted here'
+      after:
+          '   # <- inserted here'
+    
+    |gca|
+      before:
+          'aaaaaaa'
+      after:
+          'aaaaaaa    # '
+    
+    |gcw|
+      before:
+          'aaaaaaa'
+      after:
+          '/* aaaaaaa */'
+    
+    |gcv|
+      before:
+          '   some code here'
+      after:
+          you type 'gcv', and '// XXX:<CR>i'
+          '   // XXX: some code here'
+    
+    |gco|
+      before:
+          '   func1();'
+      after:
+          you type 'gco', and 'func2();'
+          '   func1()'
+          '   // func2();'
+    
+    |gcO|
+      before:
+          '   func1();'
+      after:
+          you type 'gcO', and 'call func1()'
+          '   // call func1()'
+          '   func1();'
+    
+    multiline mappings(gcm*) insert the comments or the statements.
+    
+    global variables change detailed behavior.
+    and all these mappings are also available in visual mode.
+
