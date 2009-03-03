@@ -6,22 +6,24 @@ scriptencoding utf-8
 " Name: CommentAnyWay.vim
 " Version: 1.0.0
 " Author: tyru <tyru.exe+vim@gmail.com>
-" Last Change: 2009-02-25.
+" Last Change: 2009-03-03.
 "
 " Change Log: {{{2
 "   1.0.0: Initial upload.
+"   1.0.1: Fix bug that CommentAnyWay.Base.GetIndent() can't get proper indent
+"   num.
 " }}}2
 "
 "
 " Usage:
 "
 "   COMMANDS: {{{2
-"     CSOnelineComment [comment]
+"     CAOnelineComment [comment]
 "         (this takes arguments 0 or 1)
 "         change current one-line comment.
 "         but more smarter way is using |gcv|.
 "
-"     CSRevertComment
+"     CARevertComment
 "         (this takes no arguments)
 "         revert comment.
 "   }}}2
@@ -185,6 +187,7 @@ scriptencoding utf-8
 "
 "
 "     g:ca_filetype_table (default:read below.)
+"         this variable will be deleted after Vim load this script.
 "         the default structure is:
 "           let s:ca_filetype_table = {
 "               \ 'oneline' : {
@@ -253,6 +256,7 @@ scriptencoding utf-8
 "         make this true. but no filetype comment is supported.)
 "
 "     g:ca_mapping_table (default:read below.)
+"         this variable will be deleted after Vim load this script.
 "         each map is required 'pass' and 'mode' at least.
 "         the default structure is:
 "           let s:ca_mapping_table = {
@@ -457,24 +461,21 @@ scriptencoding utf-8
 "       and allow user to pre-define the patterns.
 "       (this is similar to :s, but fast.)
 "     * add fold function.(&commentstring)
-"     * MultiLine.UnComment()
+"     * Muiltiline.UnComment()
 "     * user defines template string.(or the function returning it)
-"     * convert g:ca_*** to g:ca_***
 "     * separate filetype definitions into ~/.vim/after/ftplugin directory.
 "     * if the lines include both tab and space,
 "     the lines should restore original tab or space indent when uncomment.
-"
-"
-"   FIXME:
-"     * if exists g:ca_filetype_table, can't load my definitions.
 "     
+"   FIXME:
+"     * too OO-ish...
 "
 "
 "==================================================
 " }}}1
 "-----------------------------------------------------------------
 " INCLUDE GUARD {{{1
-if exists( 'g:loaded_comment_anyway' ) && g:loaded_comment_anyway != 0
+if exists( 'g:loaded_comment_anyway' ) && g:loaded_comment_anyway
     finish
 endif
 let g:loaded_comment_anyway = 1
@@ -491,7 +492,7 @@ func! s:Warn( msg, ... )
     if a:0 ==# 0
         call s:EchoWith( a:msg, 'WarningMsg' )
     else
-        let [errID, msg] = [a:msg, a:1]
+        let [msg, errID] = [a:msg, a:1]
         call s:EchoWith( 'Sorry, internal error.', 'WarningMsg' )
         call s:EchoWith( printf( "errID:%s\nmsg:%s", errID, msg ), 'WarningMsg' )
     endif
@@ -519,7 +520,7 @@ endfunc
 "       * return a:global_var, not consider if a:global_var equals a:template.
 func! s:ExtendUserSetting( global_var, template )
     if type( a:global_var ) != type( a:template )
-        call s:Warn( 'E001', 'type( a:global_var ) != type( a:template )' )
+        call s:Warn( 'type( a:global_var ) != type( a:template )', 'E001' )
         throw 'type error'
     endif
 
@@ -614,28 +615,38 @@ endfunc
 " }}}2
 " }}}2
 
+" s:RegisterOptions( name, type ) {{{2
+func! s:RegisterOptions( name, type )
+    for opt in s:Options
+        if opt['name'] ==# a:name    " already registered.
+            return
+        endif
+    endfor
+
+    let value = eval( '&'. a:name )
+    let s:Options += [ { 'name' : a:name, 'type' : a:type, 'value' : value } ]
+endfunc
+" }}}2
+
 " s:RestoreOptions() {{{2
 func! s:RestoreOptions()
     if ! empty( s:Options )
         for opt in s:Options
-            let value = eval( '&'. opt.name )
             if opt.type == 'string'
-                execute printf( 'setlocal %s=%s', opt.name, value )
+                execute printf( 'setlocal %s=%s', opt.name, opt.value )
             else
-                execute printf( 'let &%s = %s', opt.name, value )
+                execute printf( 'let &%s = %s', opt.name, opt.value )
             endif
         endfor
         let s:Options = []
     endif
-    " no inserted string.
-    return ''
 endfunc
 " }}}2
 
 " s:InsertCommentFromMap( flag ) {{{2
 func! s:InsertCommentFromMap( flag )
     let [fcomment, bcomment, wrap_forward, wrap_back]
-            \ = s:CommentAnyWay.OneLine.GetOneLineComment()
+            \ = s:CommentAnyWay.Oneline.GetOneLineComment()
     let str = ''
 
     if a:flag =~? 'i'  | let str .= fcomment     | endif
@@ -650,7 +661,7 @@ endfunc
 func! s:ExpandTab( sp_num )
     return &expandtab ? 
         \ repeat( ' ', a:sp_num )
-        \ : repeat( "\t", a:sp_num / &tabstop)
+        \ : repeat( "\t", a:sp_num / &tabstop )
 endfunc
 " }}}1
 "-----------------------------------------------------------------
@@ -1007,55 +1018,37 @@ unlet s:ca_mapping_table
 " SCOPED VARIABLES {{{1
 
 " NOTE: don't add these variables to s:CommentAnyWay,
-" structures get so huge.(deepcopy Base to OneLine, MultiLine)
+" structures get so huge.(deepcopy Base to Oneline, Muiltiline)
 " NOTE:
-" these keys are used when looking up which class(OneLine, MultiLine) is called.
-" and values are used by OneLine.Slurp() and MultiLine.Run().
+" these keys are used when looking up which class(Oneline, Muiltiline) is called.
+" and values are used by Oneline.Slurp() and Muiltiline.Run().
 let s:Mappings = {
-    \ 'I' : ['OneLine', { 'func' : 'Comment'       , 'slurp' : 1 } ],
-    \ 'i' : ['OneLine', { 'func' : 'Comment'       , 'slurp' : 1 } ],
-    \ 'a' : ['OneLine', { 'func' : 'Comment'       , 'slurp' : 1 } ],
-    \ 'w' : ['OneLine', { 'func' : 'Comment'       , 'slurp' : 1 } ],
-    \ 't' : ['OneLine', { 'func' : 'ToggleComment' , 'slurp' : 1 } ],
-    \ 'u' : ['OneLine', { 'func' : 'UnComment'     , 'slurp' : 1 } ],
-    \ 'v' : ['OneLine', { 'func' : 'VariousComment' } ],
-    \ 'o' : ['OneLine', { 'func' : 'JumpComment' } ],
-    \ 'O' : ['OneLine', { 'func' : 'JumpComment' } ],
-    \ 'mc' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
-    \ 'mi' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
-    \ 'mw' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
-    \ 'mf' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
-    \ 'ms' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
-    \ 'md' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
-    \ 'mt' : [ 'MultiLine', { 'func' : 'BuildString' } ], 
+    \ 'I' : ['Oneline', { 'func' : 'Comment'       , 'slurp' : 1 } ],
+    \ 'i' : ['Oneline', { 'func' : 'Comment'       , 'slurp' : 1 } ],
+    \ 'a' : ['Oneline', { 'func' : 'Comment'       , 'slurp' : 1 } ],
+    \ 'w' : ['Oneline', { 'func' : 'Comment'       , 'slurp' : 1 } ],
+    \ 't' : ['Oneline', { 'func' : 'ToggleComment' , 'slurp' : 1 } ],
+    \ 'u' : ['Oneline', { 'func' : 'UnComment'     , 'slurp' : 1 } ],
+    \ 'v' : ['Oneline', { 'func' : 'VariousComment' } ],
+    \ 'o' : ['Oneline', { 'func' : 'JumpComment' } ],
+    \ 'O' : ['Oneline', { 'func' : 'JumpComment' } ],
+    \ 'mc' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
+    \ 'mi' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
+    \ 'mw' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
+    \ 'mf' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
+    \ 'ms' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
+    \ 'md' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
+    \ 'mt' : [ 'Muiltiline', { 'func' : 'BuildString' } ], 
 \ }
 let s:ReplacePat = { 'Comment': {}, 'UnComment': {} }
 let s:FileType = {
     \ 'prev_filetype'   : '',
     \ 'priorities_table' : ['option', 'setting'],
-    \ 'OneLineString'   : { 'setting' : {}, 'option' : {} },
+    \ 'OnelineString'   : { 'setting' : {}, 'option' : {} },
     \ 'WrapString'      : { 'setting' : {} },
-    \ 'MultiLineString' : { 'setting' : {}, 'option' : {} },
+    \ 'MultilineString' : { 'setting' : {}, 'option' : {} },
 \ }
-" dictionary, because of priority of restoring.
 let s:Options = []
-" " let s:StackTrace = []
-" e.g.:
-"       [
-"           {
-"               'time' : '1231156600'
-"               'trace' : [
-"                   'ToggleComment',
-"                   'ToggleOneLine',
-"                   [ 'Comment', 'I' ]
-"               ],
-"               'range' : [ 1, 100 ],
-"               'finished' : 0   " working job.
-"           }
-"              .
-"              .
-"              .
-"       ]
 " }}}1
 "-----------------------------------------------------------------
 " DEFINE DEBUG FUNC/COM IF g:ca_verbose {{{1
@@ -1077,25 +1070,26 @@ endif
 " FUNCTION DEFINITIONS {{{1
 " s:RunWithPos( pos ) range {{{2
 func! s:RunWithPos( pos ) range
-    if a:pos =~# '\.'
-        let [pos, mode] = split( a:pos, '\.' )
+    if a:pos =~ '\.'
+        let pos = get( split( a:pos, '\.' ), 0 )
     else
         let pos = a:pos
-        let mode = 'n'
     endif
 
     let z_str  = getreg( 'z', 1 )
     let z_type = getregtype( 'z' )
-    " for speed-optimization(lazyredraw)
-    let s:Options = [ { 'name' : 'lazyredraw',
-                      \ 'type' : 'bool' } ]
+    let srch_str = getreg( '/', 1 )
+    let srch_type = getregtype( '/' )
+    call s:RegisterOptions( 'lazyredraw', 'bool' )
+    call s:RegisterOptions( 'hlsearch', 'bool' )
     setl lazyredraw
+    setl nohlsearch
 
     let mapping = s:CommentAnyWay.Base.FindMapping( pos )
     if mapping !=# ''
         call s:CommentAnyWay[mapping].Init()
         let s:CommentAnyWay[mapping].pos       = pos
-        let s:CommentAnyWay[mapping].has_range = mode == 'v'
+        let s:CommentAnyWay[mapping].has_range = a:firstline != a:lastline
         let s:CommentAnyWay[mapping].range     = [a:firstline, a:lastline]
         call s:CommentAnyWay[mapping].Run()
     else
@@ -1107,14 +1101,15 @@ func! s:RunWithPos( pos ) range
 
     call s:RestoreOptions()
     call setreg( 'z', z_str, z_type )
+    call setreg( '/', srch_str, srch_type )
 endfunc
 " }}}2
 
 " BASE {{{2
 let s:CommentAnyWay = {
     \ 'Base'      : { 'mappings' : {} },
-    \ 'OneLine'   : {},
-    \ 'MultiLine' : {},
+    \ 'Oneline'   : {},
+    \ 'Muiltiline' : {},
 \ }
 
 
@@ -1123,9 +1118,9 @@ func! s:CommentAnyWay.Base.LoadVimComments()
     if &ft ==# '' || &comments ==# 's1:/*,mb:*,ex:*/,://,b:#,:%,:XCOMM,n:>,fb:-'
         return
     endif
-    let head_space = '0'
-    let cmts_def_m = s:FileType.MultiLineString.option
-    let cmts_def_o = s:FileType.OneLineString.option
+    let head_sp = '0'
+    let cmts_def_m = s:FileType.MultilineString.option
+    let cmts_def_o = s:FileType.OnelineString.option
     let cur_ftype  = get( split( &ft, '\.' ), 0 )
     if has_key( cmts_def_m, 'comment' )
      \ && ! empty( s:GetFileTypeDef( cmts_def_m.comment, [] ) )
@@ -1166,9 +1161,9 @@ func! s:CommentAnyWay.Base.LoadVimComments()
             endif
             continue
         elseif matched ==# 's' && flags =~# '[1-9][0-9]*'
-            let head_space = matchstr( flags, '[1-9][0-9]*' )
+            let head_sp = matchstr( flags, '[1-9][0-9]*' )
         elseif matched ==# 'm' || matched ==# 'e'
-            let val = repeat( ' ', head_space ) . val
+            let val = repeat( ' ', head_sp ) . val
         endif
         call extend( cmts_def_m_templ[cur_ftype], { matched : val }, 'force' )
     endfor
@@ -1180,7 +1175,7 @@ func! s:CommentAnyWay.Base.LoadVimComments()
         endif
     endfor
     " cmts_def_m is not same dict as s:FileType.***.option. (Why?)
-    let s:FileType.MultiLineString.option = cmts_def_m
+    let s:FileType.MultilineString.option = cmts_def_m
     " because the cache would work wrongly next BufEnter.
     if empty( cmts_def_m.comment[cur_ftype] ) | unlet cmts_def_m.comment | endif
 endfunc
@@ -1202,7 +1197,7 @@ func! s:CommentAnyWay.Base.LoadWhenBufEnter()
     endif
 
     call s:CommentAnyWay.Base.LoadVimComments()    " load vim's 'comments' option.(for one or multi)
-    for type in ['OneLine', 'MultiLine']
+    for type in ['Oneline', 'Muiltiline']
         call s:CommentAnyWay[type].LoadDefinitions()    " rebuild replace regexp.
     endfor
 endfunc
@@ -1210,7 +1205,7 @@ endfunc
 
 " s:CommentAnyWay.Base.FindMapping( mapkey ) {{{3
 func! s:CommentAnyWay.Base.FindMapping( mapkey )
-    for type in ['OneLine', 'MultiLine']
+    for type in ['Oneline', 'Muiltiline']
         if has_key( s:CommentAnyWay[type], 'mappings' )
         \ && has_key( s:CommentAnyWay[type].mappings, a:mapkey )
             return type
@@ -1241,7 +1236,7 @@ func! s:CommentAnyWay.Base.EnterInsertMode( prev_line ) dict
     elseif self.pos ==# 'w' && is_blankline
         if s:GetVar( 'ca_wrap_enter_i' )
             let exec = '^'
-            let len = strlen( s:CommentAnyWay.OneLine.GetOneLineComment()[2] )    " wrap_forward
+            let len = strlen( s:CommentAnyWay.Oneline.GetOneLineComment()[2] )    " wrap_forward
             let exec .= len == 0    ? '' : len .'l'
             let exec .= 'i'
             call feedkeys( exec, 'n' )
@@ -1258,28 +1253,36 @@ endfunc
 " }}}3
 
 " s:CommentAnyWay.Base.GetIndent( lnum ) dict {{{3
-"   seek max indent num by searching the lines upward and downward.
-"   NOTE: DON'T CALL ME AFTER INSERTING SOME STRINGS.
-"   THIS UNDOES THAT BEHAVIOR.
 func! s:CommentAnyWay.Base.GetIndent( lnum ) dict
     let ftypes = split( &filetype, '\.' )
+
     if ! empty( filter( ftypes, 'v:val ==# "c" || v:val ==# "cpp"' ) )
-        let indent = cindent( '.' )
+        let indent = cindent( a:lnum )
+    elseif ! empty( filter( ftypes, 'v:val ==# "lisp" || v:val ==# "scheme"' ) )
+        " NOTE: DON'T CALL ME AFTER INSERTING SOME STRINGS.
+        " THIS UNDOES THAT BEHAVIOR.
+        call s:RegisterOptions( 'autoindent', 'bool' )
+        execute "normal! o \<Esc>x"
+        let indent = indent( a:lnum )
+        silent undo
     else
-        let indent = cindent( '.' )
-        " let indent = indent( '.' )
+        let indent = cindent( a:lnum )
+        if indent != indent( a:lnum ) && getline( a:lnum ) !~ '^\s*$' 
+            let indent = indent( a:lnum )
+        endif
     endif
+
     return indent
 endfunc
 " }}}3
 " }}}2
 
 " ONELINE COMMENT {{{2
-let s:CommentAnyWay.OneLine = deepcopy( s:CommentAnyWay.Base )
+let s:CommentAnyWay.Oneline = copy( s:CommentAnyWay.Base )
 
 
-" s:CommentAnyWay.OneLine.Init() dict {{{3
-func! s:CommentAnyWay.OneLine.Init() dict
+" s:CommentAnyWay.Oneline.Init() dict {{{3
+func! s:CommentAnyWay.Oneline.Init() dict
     let self.pos            = ''
     let self.lnum           = 0
     let self.range          = []
@@ -1291,8 +1294,8 @@ func! s:CommentAnyWay.OneLine.Init() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.Run() dict {{{3
-func! s:CommentAnyWay.OneLine.Run() dict
+" s:CommentAnyWay.Oneline.Run() dict {{{3
+func! s:CommentAnyWay.Oneline.Run() dict
     " save current line status.
     let prev_line = getline( self.range[0] )
     " get ca_align_forward
@@ -1313,8 +1316,8 @@ func! s:CommentAnyWay.OneLine.Run() dict
         endif
     " check comment pos.
     elseif ! has_key( self.mappings, self.pos )
-        let errmsg = "s:Comment(): Unknown comment position '". self.pos ."'."
-        call s:Warn( 'E002', errmsg )
+        let errmsg = "s:Comment(): Unknown comment position '". self['pos'] ."'."
+        call s:Warn( errmsg, 'E002' )
         return
     endif
 
@@ -1335,12 +1338,11 @@ func! s:CommentAnyWay.OneLine.Run() dict
     if ! self.has_range
         call self.EnterInsertMode( prev_line )
     endif
-    nohlsearch
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.Slurp() dict {{{3
-func! s:CommentAnyWay.OneLine.Slurp() dict
+" s:CommentAnyWay.Oneline.Slurp() dict {{{3
+func! s:CommentAnyWay.Oneline.Slurp() dict
     let func = self.mappings[self.pos].func
 
     for self.lnum in range( self.range[0], self.range[1] )
@@ -1348,7 +1350,7 @@ func! s:CommentAnyWay.OneLine.Slurp() dict
         if type( func ) == type( "" )
             let replaced = self[func]()
         elseif type( func ) == type( function( 'tr' ) )
-            let replaced = func( self )    " XXX
+            let replaced = func( deepcopy( self ) )    " XXX
         endif
         if line != replaced | call setline( self.lnum, replaced ) | endif
     endfor
@@ -1356,15 +1358,14 @@ endfunc
 " }}}3
 
 " TODO: Align comment in case 'a'
-" s:CommentAnyWay.OneLine.Comment() dict {{{3
-func! s:CommentAnyWay.OneLine.Comment() dict
+" s:CommentAnyWay.Oneline.Comment() dict {{{3
+func! s:CommentAnyWay.Oneline.Comment() dict
     let comment        = s:ReplacePat.Comment
     let line           = getline( self.lnum )
     let is_blankline   = line =~# '^\s*$'
     let is_i_align_cmt = self.pos ==# 'i' && ( s:GetVar( 'ca_align_forward' ) || ( ! self.has_range && s:GetVar( 'ca_i_read_indent' ) ) )
 
     if is_i_align_cmt
-        let tmp = line
         let line = substitute( line, '^'. self.head_space, '', '')
         let line = substitute( line, comment['I'][0], comment['I'][1], '' )
         let line = self.head_space . line
@@ -1381,17 +1382,21 @@ func! s:CommentAnyWay.OneLine.Comment() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.UnComment() dict {{{3
-func! s:CommentAnyWay.OneLine.UnComment() dict
+" s:CommentAnyWay.Oneline.UnComment() dict {{{3
+func! s:CommentAnyWay.Oneline.UnComment() dict
+    if ! has_key( s:ReplacePat.UnComment, self.uncomment_pos )
+        call s:Warn( self.uncomment_pos ."Can't uncomment.", 'E003' )
+    endif
     let uncomment = s:ReplacePat.UnComment[self.uncomment_pos]
     return substitute( getline( self.lnum ), uncomment[0], uncomment[1], '' )
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.ToggleComment() dict {{{3
-func! s:CommentAnyWay.OneLine.ToggleComment() dict
+" s:CommentAnyWay.Oneline.ToggleComment() dict {{{3
+func! s:CommentAnyWay.Oneline.ToggleComment() dict
     let self.pos           = s:GetVar( 'ca_toggle_comment' )
     let self.uncomment_pos = s:GetVar( 'ca_toggle_comment' )
+    let self.head_space    = s:ExpandTab( self.GetIndent( self.lnum ) )
 
     if self.IsCommentedLine()
         return self.UnComment()
@@ -1401,8 +1406,8 @@ func! s:CommentAnyWay.OneLine.ToggleComment() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.IsCommentedLine() dict {{{3
-func! s:CommentAnyWay.OneLine.IsCommentedLine() dict
+" s:CommentAnyWay.Oneline.IsCommentedLine() dict {{{3
+func! s:CommentAnyWay.Oneline.IsCommentedLine() dict
     let line = getline( self.lnum )
     let uncomment = s:ReplacePat.UnComment
 
@@ -1417,20 +1422,19 @@ endfunc
 " }}}3
 
 " TODO: add more action (XXX:current support 'I', 'i')
-" s:CommentAnyWay.OneLine.JumpComment() dict {{{3
-func! s:CommentAnyWay.OneLine.JumpComment() dict
+" s:CommentAnyWay.Oneline.JumpComment() dict {{{3
+func! s:CommentAnyWay.Oneline.JumpComment() dict
     let vect = self.pos
 
     " get comment pos.
     let pos = s:GetVar( 'ca_jump_comment' )
 
 
-    let s:Options += [ { 'name' : 'ai',
-                       \ 'type' : 'bool' } ]
+    call s:RegisterOptions( 'autoindent', 'bool' )
     setl ai
 
     call feedkeys( vect, 'n' )    " jump.
-    if !( pos ==# 'i' && s:GetVar( 'ca_align_forward' ) )
+    if pos !=# 'i' || ! s:GetVar( 'ca_align_forward' )
         call feedkeys( "\<Esc>0C", 'n' )
     endif
 
@@ -1438,14 +1442,13 @@ func! s:CommentAnyWay.OneLine.JumpComment() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.VariousComment() dict {{{3
-func! s:CommentAnyWay.OneLine.VariousComment() dict
+" s:CommentAnyWay.Oneline.VariousComment() dict {{{3
+func! s:CommentAnyWay.Oneline.VariousComment() dict
     " save values.
     call inputsave()
     let def = s:GetVar( 'ca_oneline_comment' )
-    let s:Options +=
-        \ [ { 'name' : 'eventignore', 'type' : 'string' },
-        \   { 'name' : 'filetype', 'type' : 'string' } ]
+    call s:RegisterOptions( 'eventignore', 'string' )
+    call s:RegisterOptions( 'filetype', 'string' )
     setl eventignore=all
     " LoadDefinitions() don't load any filetype definition.
     setl ft=
@@ -1462,7 +1465,7 @@ func! s:CommentAnyWay.OneLine.VariousComment() dict
     if key ==# "\<CR>" || key ==# "\<Esc>"
         return
     endif
-    if self.FindMapping( key ) !=# 'OneLine' || key ==# 'v'
+    if self.FindMapping( key ) !=# 'Oneline' || key ==# 'v'
         return
     endif
     let self.pos = key
@@ -1478,8 +1481,8 @@ func! s:CommentAnyWay.OneLine.VariousComment() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.GetOneLineComment() {{{3
-func! s:CommentAnyWay.OneLine.GetOneLineComment()
+" s:CommentAnyWay.Oneline.GetOneLineComment() {{{3
+func! s:CommentAnyWay.Oneline.GetOneLineComment()
     let ff_space        = s:GetVar( 'ca_ff_space' )
     let fb_space        = s:GetVar( 'ca_fb_space' )
     let bf_space        = s:GetVar( 'ca_bf_space' )
@@ -1494,7 +1497,7 @@ func! s:CommentAnyWay.OneLine.GetOneLineComment()
         " set one-line comment string.(e.g.: '"' when filetype is 'vim')
         let table = s:FileType.priorities_table
         for order in s:GetVar( 'ca_oneline_priority' )
-            let cmts_def = s:FileType.OneLineString[ table[order] ]
+            let cmts_def = s:FileType.OnelineString[ table[order] ]
             if s:GetFileTypeDef( cmts_def, '' ) != ''
                 let oneline_comment = s:GetFileTypeDef( cmts_def )
                 " IMPORTANT.
@@ -1523,8 +1526,8 @@ func! s:CommentAnyWay.OneLine.GetOneLineComment()
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.LoadDefinitions() {{{3
-func! s:CommentAnyWay.OneLine.LoadDefinitions()
+" s:CommentAnyWay.Oneline.LoadDefinitions() {{{3
+func! s:CommentAnyWay.Oneline.LoadDefinitions()
     let oneline_comment = s:GetVar( 'ca_oneline_comment' )
     let [fcomment, bcomment, wrap_forward, wrap_back] = self.GetOneLineComment()
     let fescaped     = s:EscapeRegexp( fcomment )
@@ -1559,8 +1562,8 @@ func! s:CommentAnyWay.OneLine.LoadDefinitions()
 endfunc
 " }}}3
 
-" s:CommentAnyWay.OneLine.ChangeOnelineComment( ... ) {{{3
-func! s:CommentAnyWay.OneLine.ChangeOnelineComment( ... )
+" s:CommentAnyWay.Oneline.ChangeOnelineComment( ... ) {{{3
+func! s:CommentAnyWay.Oneline.ChangeOnelineComment( ... )
     if a:0 ==# 1
         let b:ca_oneline_comment = a:1
     else
@@ -1575,7 +1578,7 @@ func! s:CommentAnyWay.OneLine.ChangeOnelineComment( ... )
 
     let save_ft = &ft
     setl ft=
-    call s:CommentAnyWay.OneLine.LoadDefinitions()    " rebuild comment string.
+    call s:CommentAnyWay.Oneline.LoadDefinitions()    " rebuild comment string.
     let &ft = save_ft
 
     if b:ca_oneline_comment ==# '"'
@@ -1588,11 +1591,11 @@ endfunc
 " }}}2
 
 " MULTI COMMENT {{{2
-let s:CommentAnyWay.MultiLine = deepcopy( s:CommentAnyWay.Base )
+let s:CommentAnyWay.Muiltiline = copy( s:CommentAnyWay.Base )
 
 
-" s:CommentAnyWay.MultiLine.Init() dict {{{3
-func! s:CommentAnyWay.MultiLine.Init() dict
+" s:CommentAnyWay.Muiltiline.Init() dict {{{3
+func! s:CommentAnyWay.Muiltiline.Init() dict
     let self.pos            = ''
     let self.lnum           = 0
     let self.range          = []
@@ -1604,14 +1607,14 @@ func! s:CommentAnyWay.MultiLine.Init() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.MultiLine.LoadDefinitions() dict {{{3
-func! s:CommentAnyWay.MultiLine.LoadDefinitions() dict
+" s:CommentAnyWay.Muiltiline.LoadDefinitions() dict {{{3
+func! s:CommentAnyWay.Muiltiline.LoadDefinitions() dict
     " Nop.
 endfunc
 " }}}3
 
-" s:CommentAnyWay.MultiLine.Run() dict {{{3
-func! s:CommentAnyWay.MultiLine.Run() dict
+" s:CommentAnyWay.Muiltiline.Run() dict {{{3
+func! s:CommentAnyWay.Muiltiline.Run() dict
     let func = self.mappings[self.pos].func
     if type( func ) == type( "" ) && ! has_key( self, self.mappings[self.pos].func )
         let fmt = "not implemented yet '%s'..."
@@ -1680,8 +1683,8 @@ func! s:CommentAnyWay.MultiLine.Run() dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.MultiLine.InsertString( str_lines, pos, ins_space ) dict {{{3
-func! s:CommentAnyWay.MultiLine.InsertString( str_lines, pos, ins_space ) dict
+" s:CommentAnyWay.Muiltiline.InsertString( str_lines, pos, ins_space ) dict {{{3
+func! s:CommentAnyWay.Muiltiline.InsertString( str_lines, pos, ins_space ) dict
     " get rid of %^%. and flag turns off if found %^%.
     let insert_indent = 1
     let lines = []
@@ -1702,8 +1705,7 @@ func! s:CommentAnyWay.MultiLine.InsertString( str_lines, pos, ins_space ) dict
     let lines  = map( lines, 'ins_space . v:val' )
 
     let @z         = join( lines, "\n" )
-    let s:Options += [ { 'name' : 'paste',
-                       \ 'type' : 'bool' } ]
+    call s:RegisterOptions( 'paste', 'bool' )
     setl paste
 
     " insert
@@ -1719,8 +1721,8 @@ func! s:CommentAnyWay.MultiLine.InsertString( str_lines, pos, ins_space ) dict
 endfunc
 " }}}3
 
-" s:CommentAnyWay.MultiLine.BuildString() {{{3
-func! s:CommentAnyWay.MultiLine.BuildString()
+" s:CommentAnyWay.Muiltiline.BuildString() {{{3
+func! s:CommentAnyWay.Muiltiline.BuildString()
     let table       = s:FileType.priorities_table
     let result_lis  = []
     let debug       = []
@@ -1749,7 +1751,7 @@ func! s:CommentAnyWay.MultiLine.BuildString()
     for order in s:GetVar( 'ca_multiline_priority' )
         " cmts_def:
         " e.g.: { 'cpp': { 'comment' : [ '/*', ' * %c%', ' */' ], ... }, ... }
-        let cmts_def = s:FileType.MultiLineString[ table[order] ]
+        let cmts_def = s:FileType.MultilineString[ table[order] ]
         if has_key( cmts_def, type ) && ! empty( s:GetFileTypeDef( cmts_def[type], [] ) )
             " not deepcopy(or copy), indent increasing each time.
             let lines = s:GetFileTypeDef( cmts_def[type] )
@@ -1779,13 +1781,13 @@ augroup END
 " }}}1
 "-----------------------------------------------------------------
 " COMMANDS {{{1
-command! -nargs=?           CSOnelineComment
-            \ call s:CommentAnyWay.OneLine.ChangeOnelineComment( <f-args> )
-command!                    CSRevertComment
+command! -nargs=?           CAOnelineComment
+            \ call s:CommentAnyWay.Oneline.ChangeOnelineComment( <f-args> )
+command!                    CARevertComment
             \ if exists( 'b:ca_oneline_comment' ) |
             \     unlet b:ca_oneline_comment |
             \ endif |
-            \ call s:CommentAnyWay.OneLine.LoadDefinitions()
+            \ call s:CommentAnyWay.Oneline.LoadDefinitions()
 " }}}1
 "-----------------------------------------------------------------
 " MAPPINGS {{{1
@@ -1796,7 +1798,7 @@ command!                    CSRevertComment
 func! s:Init()
     " user's(and my) settings of filetype.
     if has_key( g:ca_filetype_table, 'oneline' )
-        let s:FileType.OneLineString.setting
+        let s:FileType.OnelineString.setting
                     \ = deepcopy( g:ca_filetype_table.oneline )
     endif
     if has_key( g:ca_filetype_table, 'wrapline' )
@@ -1804,7 +1806,7 @@ func! s:Init()
                     \ = deepcopy( g:ca_filetype_table.wrapline )
     endif
     if has_key( g:ca_filetype_table, 'multiline' )
-        let s:FileType.MultiLineString.setting
+        let s:FileType.MultilineString.setting
                     \ = deepcopy( g:ca_filetype_table.multiline )
     endif
     unlet g:ca_filetype_table
@@ -1852,6 +1854,5 @@ call s:Init()
 " RESTORE CPO {{{1
 let &cpo = s:save_cpo
 " }}}1
-
-
+"-----------------------------------------------------------------
 " vim:fdm=marker:fen:
